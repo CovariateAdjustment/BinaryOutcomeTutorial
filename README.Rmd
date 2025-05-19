@@ -1,0 +1,53 @@
+---
+title: "Covariate Adjustment with a Binary Outcome: Tutorial Materials"
+output:
+  github_document:
+    # toc: true
+    # toc_depth: 2
+bibliography: "../../bibtex_files/covariate_adjustment.bib"
+---
+
+<!-- This is created in README.Rmd: Make edits to that file and recompile. -->
+
+This is meant to provide a worked example of applying standardization (G-computation) to a binary outcome in R.
+
+
+
+## How to Use This Repo:
+
+  1. Make sure you have the latest version of [R](https://cran.r-project.org/) and [R Studio](https://posit.co/downloads/) installed.
+  
+  2. Make sure that your packages are up to date (see `update.packages()`).
+  
+  3. If using Windows, install [RTools: Toolchains](https://cran.r-project.org/bin/windows/Rtools/). Mac and Linux should already have compilers available for building packages from source.
+  
+  4. Open R Studio: Select `File` > `New Project` > `Version Control` > `Git`:
+  
+    - In the `Repository URL:` field, paste `https://github.com/CovariateAdjustment/BinaryOutcomeTutorial`
+    - In the `Project directory name:` field, paste `BinaryOutcomeTutorial`
+    - Choose a directory for cloning the repo.
+  
+  5. R Studio will open the project once it is cloned:  Run `1_install_required_packages.r`: This will install packages from R and CRAN.
+  
+
+After these steps are complete, open `binary_outcome_tutorial_walkthrough.Rmd`: This R Markdown report provides a step-by-step example of materials in the slides.
+
+
+
+
+--------------------------------------------------------------------------------
+
+
+## Code in Repository
+
+### Helper Functions
+
+  1. `g_computation.R` contains `analysis_g_computation()`, which can be used to produce point estimates as well as a standard errors (SE) and confidence interval (CI). SE and CI can be computed using the nonparametric bootstrap. SE and CI is available for some estimands using influence functions.
+  
+  2. `boot_p_value.R` contains `boot_p_value()` which can take a `boot` object produced by `boot::boot()` and calculate a p-value by finding the smallest confidence level at which the CI no longer contains the null value.
+
+
+### Rmarkdown Report
+
+  - `binary_outcome_tutorial_walkthrough.Rmd` shows a reproducible report that walks through all of the examples in the presentation.
+

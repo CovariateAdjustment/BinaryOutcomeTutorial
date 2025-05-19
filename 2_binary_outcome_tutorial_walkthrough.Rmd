@@ -1,0 +1,699 @@
+---
+title: "Hands-On Tutorials for Covariate Adjustment in Randomized Trials"
+subtitle: "Binary Outcomes <-Standardization (G-Computation)"
+author: "Josh Betz (jbetz@jhu.edu), Kelly Van Lancker (kvanlan3@jhu.edu), and Michael Rosenblum (mrosen@jhu.edu)"
+date: "`r format(Sys.Date(), '%Y-%m-%d')`"
+header-includes:
+   - \usepackage{amsmath}
+output:
+  html_document:
+    self_contained: TRUE
+    toc: TRUE
+    toc_float: TRUE
+    toc_depth: 2
+    number_sections: TRUE  ## if you want number sections at each table header
+    theme: united
+    highlight: tango
+    code_folding: show
+---
+
+
+```{r Check-Packages, include = FALSE, echo = FALSE, message = FALSE}
+installed_packages <- installed.packages()[, "Package"]
+
+required_cran_packages <-
+  c("cobalt", "devtools", "digest", "dplyr", "ggplot2", "ggsci", "here",
+    "kableExtra", "labelled", "pwr", "rpact", "stringr", "table1", "tidyr",
+    "xfun")
+
+missing_packages <-
+  setdiff(
+    x = required_cran_packages,
+    y = installed_packages
+  )
+
+if(length(missing_packages) > 0){
+  stop(
+    "Required packages not installed <-", 
+    paste(missing_packages, collapse = ","), ". ",
+    "Run `1_install_required_packages.R`."
+  )
+}
+```
+
+## Setup of Reporting Workflow {.tabset}
+
+### Load Required Packages
+
+```{r setup-report, message = FALSE, warning = FALSE}
+library(here)
+library(cobalt)
+library(digest)
+library(dplyr)
+library(ggplot2)
+library(ggsci)
+library(kableExtra)
+library(labelled)
+library(pwr)
+library(rpact)
+library(xfun)
+```
+
+
+
+
+### Set Up Color Scheme: `ggsci`
+
+```{r ggsci-color-scheme}
+color_palette_1 <-
+  ggsci::scale_color_lancet()
+fill_palette_1 <-
+  ggsci::scale_fill_lancet()
+
+color_palette_2 <-
+  ggsci::scale_color_nejm()
+fill_palette_2 <-
+  ggsci::scale_fill_nejm()
+
+color_palette_3 <-
+  ggsci::scale_color_bmj()
+fill_palette_3 <-
+  ggsci::scale_fill_bmj()
+
+color_palette_4 <-
+  ggsci::scale_color_aaas()
+fill_palette_4 <-
+  ggsci::scale_fill_aaas()
+```
+
+
+
+
+### Set Up Plotting Theme: `ggplot2`
+
+```{r ggplot-plot-theme}
+axis_text_size <- 16
+axis_text_face <-"plain"
+axis_title_size <-16
+axis_title_face <-"plain"
+facet_text_size <-16
+facet_text_face <-"plain"
+plot_title_size <-20
+plot_title_face <-"bold"
+legend_text_size <-17
+legend_text_face <-"bold"
+legend_title_size <-16
+legend_title_face <-"bold"
+legend_position <-"bottom"
+
+plot_theme <-
+  theme_bw() +
+  theme(
+    axis.text.x = 
+      element_text(
+        size = axis_text_size,
+        face = axis_text_face
+      ),
+    axis.text.y = 
+      element_text(
+        size = axis_text_size,
+        face = axis_text_face
+      ),
+    axis.title = 
+      element_text(
+        size = axis_title_size,
+        face = axis_title_face,
+      ),
+    strip.text =
+      element_text(
+        size = facet_text_size,
+        face = facet_text_face,
+      ),
+    plot.title =
+      element_text(
+        size = plot_title_size,
+        face = plot_title_face
+      ),
+    legend.text =
+      element_text(
+        size = legend_text_size,
+        face = legend_text_face
+      ),
+    legend.title =
+      element_text(
+        size = legend_title_size,
+        face = legend_title_face,
+      ),
+    legend.position = legend_position
+  )
+```
+
+
+
+### Set Default Report Parameters: `knitr`
+
+**NOTE:** These are only used when the .Rmd is compiled into a report. These are not needed for running R code in the console.
+
+```{r set-chunk-parameters}
+knitr::opts_chunk$set(
+  collapse = FALSE,
+  echo = TRUE,
+  message = FALSE,
+  error = TRUE,
+  purl = TRUE,
+  results = "markup",
+  fig.path = "figures/",
+  fig.width = 8,
+  fig.height = 8,
+  fig.align = "center",
+  out.width = "80%",
+  dpi = 300
+)
+```
+
+
+
+
+--------------------------------------------------------------------------------
+
+
+
+
+## Study Design {.tabset}
+
+
+### Sample Size Determination
+
+This uses the arcsine transformation for a sample size determination for a trial with a binary outcome analyzed once at the end of follow-up:
+
+```{r study-design-parameters}
+alpha_design <- 0.05
+power_design <- 0.80
+test_sides <- 2 
+p0_design <- 0.25 # Pr{Y = 1 | A = 0}: Control Success Probability
+p1_design <- 0.38 # Pr{Y = 1 | A = 1}: Treatment Success Probability
+pr_missing <- 0.20 # Pr{R = 0}: Probability outcome is not observed
+
+test_sides <- 2
+enroll_start <- as.Date("2013-12-30")
+enroll_end <- as.Date("2017-08-15")
+
+risk_difference_design <- p1_design - p0_design
+es_h_design <- pwr::ES.h(p1 = p1_design, p2 = p0_design)
+
+n_per_arm_fixed_no_missing <-
+  pwr::pwr.2p.test(
+    h = es_h_design,
+    sig.level = alpha_design,
+    power = power_design
+  )$n %>% ceiling()
+
+n_total_no_missing <- 2*n_per_arm_fixed_no_missing
+
+# Increase N for missingness
+n_per_arm_fixed <-
+  ceiling(n_per_arm_fixed_no_missing/(1 - pr_missing))
+
+n_total_fixed <- 2*n_per_arm_fixed
+```
+
+Assuming the probability of an event is `r p0_design` under control and `r p1_design` under treatment (an effect size $h$ = `r round(es_h_design, digits = 2)`), a `r xfun::numbers_to_words(x = test_sides)`-sided test will achieve `r 100*power_design`% power with `r n_per_arm_fixed_no_missing` participants per arm (`r n_total_no_missing` total). Assuming `r 100*pr_missing`% of individuals will have a missing outcome, observing `r n_total_no_missing` outcomes will require enrolling `r n_total_fixed` participants.
+
+
+
+
+### Prepare Simulated MISTIE III Data
+
+```{r prepare-sim-miii-data}
+sim_miii_data_path <-
+  file.path(here::here(), "Simulated_MISTIE_III_v1.2.csv")
+
+sim_miii_full <-
+  read.csv(
+    file = sim_miii_data_path
+  )
+
+sim_miii_full <-
+  sim_miii_full %>%
+  dplyr::tibble() %>%
+  dplyr::mutate(
+    # Convert variables from binary indicators to labeled categorical variables
+    male =
+      factor(
+        x = male,
+        levels = 0:1,
+        labels = c("0. Female", "1. Male")
+      ),
+    
+    across(
+      .cols =
+        all_of(
+          x = c("hx_cvd", "hx_hyperlipidemia",
+                "on_anticoagulants", "on_antiplatelets")
+        ),
+      .fns = function(x) factor(x, levels = 0:1, labels = c("0. No", "1. Yes"))
+    ),
+    
+    # Convert GCS and MRS variables from character data to categorical variables
+    across(
+      .cols = starts_with("gcs") | starts_with("mrs"),
+      .fns = factor
+    ),
+    
+    ich_location =
+      factor(
+        x = ich_location,
+        levels = c("Deep", "Lobar")
+      ),
+    
+    arm =
+      factor(
+        x = arm,
+        levels = c("medical", "surgical")
+      ),
+    
+    tx = 1*(arm == "surgical"),
+    
+    mrs_30d_binary =
+      case_when(
+        mrs_30d %in% c("0-3") ~ 1,
+        mrs_30d %in% c("4", "5", "6") ~ 0,
+      ),
+    
+    mrs_180d_binary =
+      case_when(
+        mrs_180d %in% c("0-2", "3") ~ 1,
+        mrs_180d %in% c("4", "5", "6") ~ 0,
+      ),
+    
+    mrs_365d_binary =
+      case_when(
+        mrs_365d %in% c("0-1", "2", "3") ~ 1,
+        mrs_365d %in% c("4", "5", "6") ~ 0,
+      ),
+    
+    mrs_365d_binary_factor =
+      factor(
+        x = mrs_365d_binary
+      )
+  )
+```
+
+
+
+
+### Apply Column Labels for Readability
+
+```{r add-column-labels}
+# Apply labels to Variables
+labelled::var_label(sim_miii_full$age) <-
+  "Age at Presentation (y)"
+labelled::var_label(sim_miii_full$male) <-
+  "Sex"
+labelled::var_label(sim_miii_full$hx_cvd) <-
+  "Hx Cardiovascular Disease"
+labelled::var_label(sim_miii_full$hx_hyperlipidemia) <-
+  "Hx Hyperlipidemia"
+labelled::var_label(sim_miii_full$on_anticoagulants) <-
+  "On Anticoagulants: Presentation"
+labelled::var_label(sim_miii_full$on_antiplatelets) <-
+  "On Antiplatelets: Presentation"
+
+labelled::var_label(sim_miii_full$ich_location) <-
+  "ICH Location"
+labelled::var_label(sim_miii_full$ich_s_volume) <-
+  "ICH Volume (mL): Stability"
+labelled::var_label(sim_miii_full$ivh_s_volume) <-
+  "IVH Volume (mL): Stability"
+labelled::var_label(sim_miii_full$gcs_category) <-
+  "Glasgow Coma Scale: Presentation"
+
+labelled::var_label(sim_miii_full$mrs_30d) <-
+  "Modified Rankin Scale: 30 Days"
+labelled::var_label(sim_miii_full$mrs_180d) <-
+  "Modified Rankin Scale: 180 Days"
+labelled::var_label(sim_miii_full$mrs_365d) <-
+  "Modified Rankin Scale: 365 Days"
+labelled::var_label(sim_miii_full$mrs_365d_binary) <-
+  "Modified Rankin Scale < 4: 365 Days"
+labelled::var_label(sim_miii_full$mrs_365d_binary_factor) <-
+  "Modified Rankin Scale < 4: 365 Days"
+```
+
+
+
+
+--------------------------------------------------------------------------------
+
+
+
+
+## Study Descriptives {.tabset}
+
+In this section, we tabulate the baseline covariates, assess imbalance using standardized differences between treatment arms, tabulate our outcomes, and calculate crude estimates of the risk difference, relative risk, and odds ratio.
+
+First, let's create the subset of data
+
+```{r create-data}
+sim_miii <-
+  sim_miii_full %>% 
+  dplyr::slice(1:n_total_fixed) %>% 
+  as.data.frame()
+```
+
+
+
+### Covariates: By Treatment, Aggregate
+
+```{r Covariate-Summaries}
+table1::table1(
+  x = ~ 
+    age + male + hx_cvd + hx_hyperlipidemia +
+    on_anticoagulants + on_antiplatelets +
+    ich_location + ich_s_volume + ivh_s_volume + 
+    gcs_category |
+    arm,
+  data = sim_miii
+)
+```
+
+
+
+
+### Covariate Balance
+
+```{r Covariate-Balance}
+cobalt::bal.tab(
+  x = 
+    sim_miii %>% 
+    dplyr::select(
+      age, male, on_antiplatelets, ich_location, ich_s_volume,
+      ivh_s_volume, gcs_category
+    ),
+  treat = sim_miii$arm,
+  binary = "std",
+  continuous = "std",
+  s.d.denom = "pooled"
+)
+```
+
+
+
+
+### Outcomes:
+
+```{r Table-Outcomes}
+table1::table1(
+  x = ~ 
+    mrs_365d +
+    mrs_365d_binary_factor |
+    arm,
+  data = sim_miii
+)
+```
+
+
+
+
+### Crude Estimates
+
+```{r Crude-Estimates}
+y1_hat <-
+  with(
+    data = subset(sim_miii, arm == "surgical"),
+    mean(mrs_365d_binary, na.rm = TRUE)
+  )
+y0_hat <-
+  with(
+    data = subset(sim_miii, arm == "medical"),
+    mean(mrs_365d_binary, na.rm = TRUE)
+  )
+
+# Risk Difference
+y1_hat - y0_hat
+
+# Risk Ratio
+y1_hat/y0_hat
+
+# Odds Ratio
+(y1_hat*(1 - y0_hat))/(y0_hat*(1 - y1_hat))
+```
+
+
+
+
+--------------------------------------------------------------------------------
+
+
+
+
+## Unadjusted Analysis {.tabset}
+  
+### Fitting Logistic Model
+  
+```{r Fit-Unadjusted-Model}
+mrs_unadjusted_logistic_glm <-
+  stats::glm(
+    formula = mrs_365d_binary ~ arm,
+    data = sim_miii,
+    family = binomial(link = "logit")
+  )
+
+summary(mrs_unadjusted_logistic_glm)
+```
+
+
+
+
+### Generating Unadjusted Predictions
+
+```{r Generate-Unadjusted-Predictions}
+pr_outcome_unadj_control <-
+  stats::predict(
+    object = mrs_unadjusted_logistic_glm,
+    newdata = 
+      within(data = sim_miii,
+             expr = {arm = "medical"}),
+    type = "response"
+  )
+
+pr_outcome_unadj_treatment <-
+  stats::predict(
+    object = mrs_unadjusted_logistic_glm,
+    newdata = 
+      within(data = sim_miii,
+             expr = {arm = "surgical"}),
+    type = "response"
+  )
+
+table(pr_outcome_unadj_control)
+table(pr_outcome_unadj_treatment)
+```
+
+
+
+### Average & Contrast Predictions
+
+```{r Contrast-Average-Unadjusted-Predictions 1}
+e_y_0_unadj <- mean(pr_outcome_unadj_control)
+e_y_1_unadj <- mean(pr_outcome_unadj_treatment)
+
+# Risk Difference
+e_y_1_unadj - e_y_0_unadj
+# Relative Risk
+e_y_1_unadj/e_y_0_unadj
+# Odds Ratio
+(e_y_1_unadj*(1 - e_y_0_unadj))/
+  (e_y_0_unadj*(1 - e_y_1_unadj))
+```
+
+
+
+
+### Compare with Logistic GLM
+
+```{r Compute-Unadjusted-Contrasts-from-Model}
+unadj_glm_beta <- coef(mrs_unadjusted_logistic_glm)
+pr_medical <-
+  plogis(unadj_glm_beta["(Intercept)"])
+
+pr_surgical <-
+  plogis(unadj_glm_beta["(Intercept)"] +
+           unadj_glm_beta["armsurgical"])
+
+pr_surgical - pr_medical # Risk Difference
+pr_surgical/pr_medical # Relative Risk
+exp(unadj_glm_beta["armsurgical"]) # Odds Ratio
+```
+
+
+
+
+### Worked Example: Unadjusted
+
+```{r Compute-Unadjusted-ATE}
+source("bootstrap_set_parameters.R")
+source("g_computation.R")
+source("boot_p_value.R")
+
+
+library(boot)
+
+set.seed(12345) # Set seed for Reproducibility
+
+rd_unadjusted_result <-
+  analysis_g_computation(
+    data = sim_miii,
+    formula = mrs_365d_binary ~ tx,
+    family = binomial(link = "logit"),
+    estimand = "difference", # "ratio" or "oddsratio"
+    treatment_column = "tx",
+    se_method = "bootstrap", # "none" "influence" "score"
+    verbose = TRUE # Needed for p-value, not CI
+  )
+
+with(
+  data = rd_unadjusted_result$result,
+  expr = {
+    c(
+      "Estimate" = estimate,
+      "SE" = se_boot_df_adjusted,
+      "LCL" = lcl_bca_df_adjusted_0.95,
+      "UCL" = ucl_bca_df_adjusted_0.95
+    )
+  }
+)
+
+boot_p_value(
+  boot_object = rd_unadjusted_result$boot_object,
+  ci_method = "bca",
+  null_value = 0,
+  # Adjust CI width for DF in model
+  var_adjust = rd_unadjusted_result$result$variance_factor
+)
+```
+
+
+
+
+--------------------------------------------------------------------------------
+  
+  
+  
+  
+## Covariate Adjusted Analyses {.tabset}
+  
+  
+### Fit Adjusted Logit GLM
+  
+```{r Fit-Adjusted-Model-1, results = "markup"}
+mrs_adjusted_logistic_glm <-
+  stats::glm(
+    formula = 
+      mrs_365d_binary ~ arm +
+      age + 
+      male +
+      hx_cvd +
+      hx_hyperlipidemia +
+      on_anticoagulants +
+      on_antiplatelets +
+      ich_location +
+      ich_s_volume +
+      ivh_s_volume + 
+      gcs_category,
+    data = sim_miii,
+    family =
+      binomial(link = "logit")
+  )
+
+summary(mrs_adjusted_logistic_glm)
+```
+
+
+
+
+### Generating Adjusted Predictions
+
+```{r Generate-Adjusted-Predictions}
+pr_outcome_adj_control <-
+  stats::predict(
+    object = mrs_adjusted_logistic_glm,
+    newdata = 
+      within(data = sim_miii,
+             expr = {arm = "medical"}),
+    type = "response"
+  )
+
+pr_outcome_adj_treatment <-
+  stats::predict(
+    object = mrs_adjusted_logistic_glm,
+    newdata = 
+      within(data = sim_miii,
+             expr = {arm = "surgical"}),
+    type = "response"
+  )
+
+par(mfrow = c(1, 2))
+hist(
+  pr_outcome_adj_treatment,
+  breaks = "fd"
+)
+
+hist(
+  pr_outcome_adj_control,
+  breaks = "fd"
+)
+```
+
+
+
+
+### Results: Adjusted
+
+```{r Compute-Adjusted-ATE, results = "markup"}
+rd_adjusted_result <-
+  analysis_g_computation(
+    data = sim_miii,
+    formula = mrs_365d_binary ~ tx + age + male + hx_cvd + hx_hyperlipidemia +
+      on_anticoagulants + on_antiplatelets + ich_location + ich_s_volume +
+      ivh_s_volume + gcs_category,
+    family = binomial(link = "logit"),
+    estimand = "difference", # "ratio" or "oddsratio"
+    treatment_column = "tx",
+    se_method = "bootstrap", # "none" "influence" "score"
+    verbose = TRUE # Needed for p-value, not CI
+  )
+
+with(
+  data = rd_adjusted_result$result,
+  expr = {
+    c(
+      "Estimate" = estimate,
+      "SE" = se_boot_df_adjusted,
+      "LCL" = lcl_bca_df_adjusted_0.95,
+      "UCL" = ucl_bca_df_adjusted_0.95
+    )
+  }
+)
+
+boot_p_value(
+  boot_object = rd_adjusted_result$boot_object,
+  ci_method = "bca",
+  null_value = 0,
+  # Adjust CI width for DF in model
+  var_adjust = rd_adjusted_result$result$variance_factor
+)
+```
+
+
+
+
+--------------------------------------------------------------------------------
+  
+## Comparing Analysis Methods:
+  
+  - $Var(\theta) = (SE(\theta))^2$
+  - Relative Efficiency: $RE_{A/U} = Var(\theta_{U})/Var(\theta_{A})$
+  - Relative Change in Variance: $RCV_{A/U} = \frac{Var(\theta_{A}) - Var(\theta_{U})}{Var(\theta_{U})} = \frac{1}{RE_{A/U}} - 1$
+  - Relative Change in Precision: $RCP_{A/U} = \frac{1/Var(\theta_{A}) - 1/Var(\theta_{U})}{1/Var(\theta_{U})} = Var(\theta_{U})/Var(\theta_{A}) - 1 = RE_{A/U} - 1$
+  
