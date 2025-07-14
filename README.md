@@ -30,31 +30,42 @@ This is meant to provide a worked example of applying standardization
     - Choose a directory for cloning the repo.
 
 5.  R Studio will open the project once it is cloned: Run
-    `1_install_required_packages.r`: This will install packages from R
+    `0_install_required_packages.r`: This will install packages from R
     and CRAN.
 
 After these steps are complete, open
-`binary_outcome_tutorial_walkthrough.Rmd`: This R Markdown report
-provides a step-by-step example of materials in the slides.
+`Covariate_Adjustment_Handout_Binary`: This R Markdown report provides a
+step-by-step example of materials in the slides.
 
 ------------------------------------------------------------------------
 
-## Code in Repository
+## Content in Repository
+
+### Data
+
+1.  \`Simulated_MISTIE_III_v1.2.csv” - A spreadsheet of the data used in
+    the example
+2.  `sim_MIII_MRS.Rdata` - Materials used in handouts and slides
+3.  `sim_MIII_MRS_fixed.Rdata` - Cached results used in handouts and
+    slides
 
 ### Helper Functions
 
-1.  `g_computation.R` contains `analysis_g_computation()`, which can be
-    used to produce point estimates as well as a standard errors (SE)
-    and confidence interval (CI). SE and CI can be computed using the
-    nonparametric bootstrap. SE and CI is available for some estimands
-    using influence functions.
-
-2.  `boot_p_value.R` contains `boot_p_value()` which can take a `boot`
+1.  `boot_p_value.R` contains `boot_p_value()` which can take a `boot`
     object produced by `boot::boot()` and calculate a p-value by finding
-    the smallest confidence level at which the CI no longer contains the
-    null value.
+    the smallest confidence level $\alpha$ at which the null hypothesis
+    is rejected (i.e. the CI no longer contains the null value of the
+    parameter).
 
-### Rmarkdown Report
+### Covariate Adjustment
 
-- `binary_outcome_tutorial_walkthrough.Rmd` shows a reproducible report
-  that walks through all of the examples in the presentation.
+- `Covariate_Adjustment_Slides_Binary` contains the slides used in short
+  courses
+- `Covariate_Adjustment_Handout_Binary` shows a reproducible report that
+  walks through all of the code examples in the slides.
+
+### Additional Code
+
+In order to reduce compiling/computing time due to the bootstrap,
+results are computed and cached. This code is available for users to see
+how the example data and results were created.
